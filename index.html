@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32-CAM Smart Fan Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #121212; color: #e5e5e5; }
+        .glass-panel { 
+            background: rgba(30, 30, 30, 0.7); 
+            backdrop-filter: blur(10px); 
+            border: 1px solid rgba(255, 255, 255, 0.1); 
+        }
+        /* Custom styling for speed slider */
+        .slider { 
+            -webkit-appearance: none; 
+            width: 100%; 
+            height: 8px; 
+            border-radius: 5px; 
+            background: #374151; 
+            outline: none; 
+        }
+        .slider::-webkit-slider-thumb { 
+            -webkit-appearance: none; 
+            appearance: none; 
+            width: 24px; 
+            height: 24px; 
+            border-radius: 50%; 
+            background: #3b82f6; 
+            cursor: pointer; 
+            transition: background .15s ease-in-out; 
+        }
+        .slider::-webkit-slider-thumb:hover { 
+            background: #2563eb; 
+        }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8 font-sans antialiased flex flex-col items-center">
+    
+    <div class="max-w-4xl w-full">
+        <!-- Header Section -->
+        <header class="mb-8 text-center">
+            <h1 class="text-3xl md:text-4xl font-bold text-white mb-2">Smart Wall Fan Control</h1>
+            <p class="text-gray-400">ESP32-CAM & AC Dimmer IoT Dashboard</p>
+        </header>
+
+        <!-- Main Layout Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            <!-- Video Stream Panel (Left) -->
+            <div class="glass-panel rounded-2xl p-4 flex flex-col shadow-xl">
+                <h2 class="text-xl font-semibold mb-4 flex items-center gap-2">
+                    <!-- Red blinking dot icon -->
+                    <svg class="w-5 h-5 text-red-500 animate-pulse" fill="currentColor" viewBox="0 0 20 20"><circle cx="10" cy="10" r="5"/></svg>
+                    Live Camera Feed
+                </h2>
+                <!-- Video Stream Container -->
+                <div class="relative w-full rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-gray-700">
+                    <img id="stream-img" src="/stream" alt="ESP32-CAM Video Stream" class="w-full h-full object-cover">
+                </div>
+            </div>
+
+            <!-- Controls Panel (Right) -->
+            <div class="glass-panel rounded-2xl p-6 flex flex-col gap-8 shadow-xl">
+                
+                <!-- Status Indicator (Face Detection Mode) -->
+                <div>
+                    <h2 class="text-xl font-semibold mb-4">System Status</h2>
+                    <div class="flex items-center justify-between bg-gray-800 rounded-xl p-4 border border-gray-700">
+                        <span class="text-gray-300">Operation Mode</span>
+                        <div id="mode-indicator" class="px-4 py-1.5 rounded-full text-sm font-medium bg-blue-900/50 text-blue-400 border border-blue-700/50 flex items-center gap-2 transition-colors duration-300">
+                            <span class="relative flex h-2.5 w-2.5">
+                              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                              <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+                            </span>
+                            Auto (Face Detect)
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Power Toggle (Relay Control) -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h2 class="text-xl font-semibold">Main Power (Relay 5V)</h2>
+                        <span id="power-status-text" class="text-sm font-medium text-gray-400">OFF</span>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer w-full h-16 bg-gray-800 rounded-xl p-2 border border-gray-700">
+                        <!-- Checkbox as toggle -->
+                        <input type="checkbox" id="power-toggle" class="sr-only peer" onchange="togglePower()">
+                        <div class="w-14 h-8 bg-gray-600 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[20px] after:left-[12px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-green-500"></div>
+                        <span class="ml-4 font-medium text-gray-300 peer-checked:text-white transition-colors">Toggle Fan Power</span>
+                    </label>
+                </div>
+
+                <!-- Speed Control (AC Dimmer) -->
+                <div>
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold">Fan Speed (AC Dimmer)</h2>
+                        <span id="speed-value" class="text-2xl font-bold text-primary">0%</span>
+                    </div>
+                    
+                    <!-- Slider -->
+                    <div class="mb-6">
+                        <input type="range" id="speed-slider" min="0" max="100" value="0" class="slider" onchange="setSpeed(this.value)" oninput="updateSpeedDisplay(this.value)">
+                    </div>
+
+                    <!-- Preset Buttons -->
+                    <div class="grid grid-cols-4 gap-2">
+                        <button onclick="setPresetSpeed(0)" class="preset-btn bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors font-medium text-sm">Off</button>
+                        <button onclick="setPresetSpeed(33)" class="preset-btn bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors font-medium text-sm">Speed 1</button>
+                        <button onclick="setPresetSpeed(66)" class="preset-btn bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors font-medium text-sm">Speed 2</button>
+                        <button onclick="setPresetSpeed(100)" class="preset-btn bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors font-medium text-sm">Speed 3</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Popup -->
+    <div id="toast" class="fixed bottom-4 right-4 bg-gray-800 text-white px-6 py-3 rounded-xl shadow-lg border border-gray-700 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 z-50">
+        <svg id="toast-icon" class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        <span id="toast-msg">Command sent</span>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // DOM Elements
+        const powerToggle = document.getElementById('power-toggle');
+        const powerStatusText = document.getElementById('power-status-text');
+        const speedSlider = document.getElementById('speed-slider');
+        const speedValueDisplay = document.getElementById('speed-value');
+        const modeIndicator = document.getElementById('mode-indicator');
+        let autoModeActive = true;
+
+        /**
+         * Fungsi inti untuk mengirim HTTP Request (AJAX) menggunakan fetch API.
+         * Dengan ini halaman tidak perlu me-reload (no reload), sehingga stream video tidak putus.
+         */
+        async function sendCommand(url) {
+            try {
+                // Fetch akan melakukan request ke alamat ESP32 (misal: /toggle-relay)
+                const response = await fetch(url);
+                if (response.ok) {
+                    showToast('Perintah berhasil dikirim', 'success');
+                    // Saat user mengirim perintah manual, ubah status ke Manual Override
+                    setManualOverride();
+                } else {
+                    showToast('Gagal mengirim perintah', 'error');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                showToast('Koneksi ke ESP32 terputus', 'error');
+            }
+        }
+
+        /**
+         * Dipanggil saat switch relay di-klik
+         */
+        function togglePower() {
+            const isChecked = powerToggle.checked;
+            // Update teks status UI (ON/OFF)
+            powerStatusText.innerText = isChecked ? 'ON' : 'OFF';
+            powerStatusText.className = isChecked ? 'text-sm font-medium text-green-400' : 'text-sm font-medium text-gray-400';
+            
+            // Kirim request ke ESP32 di alamat /toggle-relay
+            sendCommand('/toggle-relay');
+        }
+
+        /**
+         * Update angka presentase kecepatan saat slider digeser
+         */
+        function updateSpeedDisplay(val) {
+            speedValueDisplay.innerText = val + '%';
+        }
+
+        /**
+         * Dipanggil saat slider dilepas di nilai tertentu
+         */
+        function setSpeed(val) {
+            updateSpeedDisplay(val);
+            // Kirim request ke ESP32 di alamat /set-speed?val=XX
+            sendCommand('/set-speed?val=' + val);
+        }
+
+        /**
+         * Dipanggil saat tombol preset (Mati, Speed 1,2,3) di-klik
+         */
+        function setPresetSpeed(val) {
+            speedSlider.value = val;
+            updateSpeedDisplay(val);
+            // Kirim request yang sama
+            sendCommand('/set-speed?val=' + val);
+        }
+
+        /**
+         * Mengubah label indikator status dari Auto ke Manual Override
+         */
+        function setManualOverride() {
+            if (autoModeActive) {
+                autoModeActive = false;
+                // Ubah gaya label menjadi warna kuning (Manual Override)
+                modeIndicator.className = 'px-4 py-1.5 rounded-full text-sm font-medium bg-yellow-900/50 text-yellow-400 border border-yellow-700/50 flex items-center gap-2 transition-colors duration-300';
+                modeIndicator.innerHTML = `
+                    <span class="relative flex h-2.5 w-2.5">
+                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500"></span>
+                    </span>
+                    Manual Override
+                `;
+            }
+        }
+
+        /**
+         * Menampilkan notifikasi popup (Toast) saat perintah dikirim
+         */
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            const msg = document.getElementById('toast-msg');
+            const icon = document.getElementById('toast-icon');
+            
+            msg.innerText = message;
+            if (type === 'success') {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>';
+                icon.className = 'w-5 h-5 text-green-400';
+            } else {
+                icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+                icon.className = 'w-5 h-5 text-red-400';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
